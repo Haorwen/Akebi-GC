@@ -14,7 +14,9 @@ namespace cheat::feature
         app::Component_1* Profirency = nullptr;
     }
 
-    static void PlayerModule_RequestPlayerCook(app::MoleMole_PlayerModule* __this, uint32_t recipeId, uint32_t avatarId, uint32_t qteQuality, uint32_t count, MethodInfo* method); 
+    static std::map<AutoCook::CookQuality, int> qualities{ {AutoCook::CookQuality::Suspicious, 1}, {AutoCook::CookQuality::Normal, 2}, {AutoCook::CookQuality::Delicious, 3} };
+
+    static void PlayerModule_RequestPlayerCook(app::MoleMole_PlayerModule* __this, uint32_t recipeId, uint32_t avatarId, uint32_t qteQuality, uint32_t count, MethodInfo* method);
     static void PlayerModule_OnPlayerCookRsp(app::MoleMole_PlayerModule* __this, app::PlayerCookRsp* rsp, MethodInfo* method);
     static void CookingQtePageContext_UpdateProficiency(app::CookingQtePageContext* __this, MethodInfo* method);
 
@@ -22,7 +24,7 @@ namespace cheat::feature
         NF(f_Enabled, "Standart Cooking", "AutoCook", false),
         NF(f_FastProficiency, "Fast Proficiency", "AutoCook", false),
         NF(f_CountField, "Count Item", "AutoCook", 1),
-        NF(f_QualityField, "Quality", "AutoCook", 1)
+        NF(f_QualityField, "Quality", "AutoCook", AutoCook::CookQuality::Normal)
     {
         HookManager::install(app::MoleMole_PlayerModule_RequestPlayerCook, PlayerModule_RequestPlayerCook);
         HookManager::install(app::MoleMole_PlayerModule_OnPlayerCookRsp, PlayerModule_OnPlayerCookRsp);
@@ -38,12 +40,12 @@ namespace cheat::feature
     void AutoCook::DrawMain()
     {
         ConfigWidget(f_Enabled, "Fast Cooking if the recipe has fast cooking open. \n" \
-                "If fast cooking is closed, you in addition need to turn on Fast Proficiency.");
+            "If fast cooking is closed, you in addition need to turn on Fast Proficiency.");
         ConfigWidget(f_FastProficiency, "Quickly prepare an unstudied recipe to the maximum possible.");
         ConfigWidget("Count Item", f_CountField, 1, 1, 100,
             "How much to cook at a time.\n" \
             "(For standard mode only.)");
-        ConfigWidget("Quality Cooking", f_QualityField, 1, 1, 3, "Quality of the cook.");
+        ConfigWidget(f_QualityField, "Select the quality of cook result.");
     }
 
     bool AutoCook::NeedStatusDraw() const
@@ -53,7 +55,12 @@ namespace cheat::feature
 
     void AutoCook::DrawStatus()
     {
-        ImGui::Text("Auto Cooking [%s]", f_FastProficiency ? "Proficiency" : "Standart");
+        if (f_FastProficiency)
+            ImGui::Text("Auto Cooking [Proficiency]");
+        else
+            ImGui::Text("Auto Cooking [Standart, %s]", 
+                f_QualityField.value() == AutoCook::CookQuality::Suspicious ? "Suspicious" : f_QualityField.value() == AutoCook::CookQuality::Normal ? "Normal" : "Delicious"
+            );
     }
 
     AutoCook& AutoCook::GetInstance()
@@ -82,9 +89,14 @@ namespace cheat::feature
         if (autoCook.f_Enabled || autoCook.f_FastProficiency)
         {
             autoCook.CookFoodMaxNum = app::MoleMole_Config_CookRecipeExcelConfig_CheckCookFoodMaxNum(recipeId, nullptr);
-            qteQuality = autoCook.f_QualityField;
 
-            if (!autoCook.f_FastProficiency && autoCook.f_Enabled){
+            // To prevent possible crashes
+            if (!qualities.count(autoCook.f_QualityField.value()))
+                autoCook.f_QualityField.value() = AutoCook::CookQuality::Normal;
+
+            qteQuality = qualities.find(autoCook.f_QualityField.value())->second;
+
+            if (!autoCook.f_FastProficiency && autoCook.f_Enabled) {
                 count = autoCook.f_CountField;
                 if (autoCook.f_CountField > autoCook.CookFoodMaxNum)
                     count = autoCook.CookFoodMaxNum;
@@ -99,7 +111,7 @@ namespace cheat::feature
                 auto RectTransform = app::GameObject_GetComponentByName(GameObject::Profirency, string_to_il2cppi("RectTransform"), nullptr);
                 auto TransformChild = app::Transform_GetChild(reinterpret_cast<app::Transform*>(RectTransform), 0, nullptr);
                 auto TextComponent = app::Component_1_GetComponent_1(reinterpret_cast<app::Component_1*>(TransformChild), string_to_il2cppi("Text"), nullptr);
-                
+
                 if (TextComponent != nullptr) {
                     auto Text_str = app::Text_get_text(reinterpret_cast<app::Text*>(TextComponent), nullptr);
                     auto ProficiencyStr = il2cppi_to_string(Text_str).erase(0, il2cppi_to_string(Text_str).find_first_of(" ."));
@@ -127,7 +139,11 @@ namespace cheat::feature
         AutoCook& autoCook = AutoCook::GetInstance();
         if (autoCook.f_Enabled || autoCook.f_FastProficiency)
         {
-            rsp->fields.qteQuality_ = autoCook.f_QualityField;
+            // To prevent possible crashes
+            if (!qualities.count(autoCook.f_QualityField.value()))
+                autoCook.f_QualityField.value() = AutoCook::CookQuality::Normal;
+
+            rsp->fields.qteQuality_ = qualities.find(autoCook.f_QualityField.value())->second;
             rsp->fields.cookCount_ = autoCook.f_CountField;
             if (autoCook.f_FastProficiency)
                 rsp->fields.cookCount_ = 1;
@@ -137,14 +153,14 @@ namespace cheat::feature
 
         return CALL_ORIGIN(PlayerModule_OnPlayerCookRsp, __this, rsp, method);
     }
-   
+
     static void CookingQtePageContext_UpdateProficiency(app::CookingQtePageContext* __this, MethodInfo* method) {
         AutoCook& autoCook = AutoCook::GetInstance();
         if (autoCook.f_Enabled || autoCook.f_FastProficiency)
         {
             __this->fields._pageMono->fields._qteTime = 0;
             __this->fields._pageMono->fields._autoQteTime = 0;
-            app::CookingQtePageContext_CloseItemGotPanel(__this, nullptr); // Auto Close Panel
+            app::MoleMole_CookingQtePageContext_CloseItemGotPanel(__this, nullptr); // Auto Close Panel
         }
         return CALL_ORIGIN(CookingQtePageContext_UpdateProficiency, __this, method);
     }
