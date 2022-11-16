@@ -12,6 +12,9 @@ namespace cheat::feature
 		config::Field<config::Toggle<Hotkey>> f_DestroyOres;
 		config::Field<config::Toggle<Hotkey>> f_DestroyShields;
 		config::Field<config::Toggle<Hotkey>> f_DestroyDoodads;
+		config::Field<config::Toggle<Hotkey>> f_DestroyPlants;
+		config::Field<config::Toggle<Hotkey>> f_DestroySpecialObjects;
+		config::Field<config::Toggle<Hotkey>> f_DestroySpecialChests;
 		config::Field<float> f_Range;
 
 		static AutoDestroy& GetInstance();

@@ -21,17 +21,17 @@ namespace cheat::feature
 	ESP::ESP() : Feature(),
 		NF(f_Enabled, "ESP", "ESP", false),
 
-        NF(f_DrawBoxMode, "Draw Mode", "ESP", DrawMode::Box),
+		NF(f_DrawBoxMode, "Draw Mode", "ESP", DrawMode::Box),
 		NF(f_DrawTracerMode, "Tracer Mode", "ESP", DrawTracerMode::Line),
-        NF(f_Fill, "Fill Box/Rectangle/Arrows", "ESP", false),
-        NF(f_FillTransparency, "Fill Transparency", "ESP", 0.5f),
+		NF(f_Fill, "Fill Box/Rectangle/Arrows", "ESP", false),
+		NF(f_FillTransparency, "Fill Transparency", "ESP", 0.5f),
 
 		NF(f_ArrowRadius, "Arrow Radius", "ESP", 100.0f),
 		NF(f_OutlineThickness, "Outline Thickness", "ESP", 1.0f),
 		NF(f_TracerSize, "Tracer Size", "ESP", 1.0f),
 		NF(f_MiddleScreenTracer, "Middle Screen Tracer", "ESP", false),
-        NF(f_DrawDistance, "Draw Distance", "ESP", false),
-        NF(f_DrawName, "Draw Name", "ESP", false),
+		NF(f_DrawDistance, "Draw Distance", "ESP", false),
+		NF(f_DrawName, "Draw Name", "ESP", false),
 
 		NF(f_FontSize, "Font Size", "ESP", 12.0f),
 		NF(f_FontOutline, "Font outline", "ESP", true),
@@ -69,7 +69,7 @@ namespace cheat::feature
 
 			ConfigWidget(f_DrawBoxMode, "Select the mode of box drawing.");
 			ConfigWidget(f_DrawTracerMode, "Select the mode of tracer drawing.");
-      
+
 			ConfigWidget(f_Fill);
 			ConfigWidget(f_FillTransparency, 0.01f, 0.0f, 1.0f, "Transparency of filled part.");
 			ConfigWidget(f_MiddleScreenTracer, "Draw tracer from middle part of the screen.");
@@ -84,7 +84,7 @@ namespace cheat::feature
 				}
 				ImGui::EndGroupPanel();
 			}
-      
+
 			ImGui::Spacing();
 			ConfigWidget(f_DrawName, "Draw name of object.");
 			ConfigWidget(f_DrawDistance, "Draw distance of object.");
@@ -146,6 +146,26 @@ namespace cheat::feature
 		return instance;
 	}
 
+    bool ESP::isBuriedChest(game::Entity* entity)
+    {
+        if (entity->name().find("_WorldArea_Operator") != std::string::npos)
+        {
+            auto entityGameObject = app::MoleMole_BaseEntity_get_rootGameObject(entity->raw(), nullptr);
+            auto transform = app::GameObject_GetComponentByName(entityGameObject, string_to_il2cppi("Transform"), nullptr);
+            auto child = app::Transform_FindChild(reinterpret_cast<app::Transform*>(transform), string_to_il2cppi("CircleR2H2"), nullptr);
+            if (child == nullptr)
+                return false;
+
+			auto configID = entity->raw()->fields._configID_k__BackingField;
+			//LOG_DEBUG("%d", configID);
+			if (configID != 70360001 && configID != 70360286)
+				return false;
+
+            return true;
+        }
+        return false;
+    }
+
 	void ESP::GetNpcName(std::string& name)
 	{
 		if (name.find("Avatar") != std::string::npos)
@@ -189,55 +209,55 @@ namespace cheat::feature
 			//switch statement to determine how we will get name
 			switch (count)
 			{
-				case 3:
+			case 3:
+			{
+				j = 0;		// j is the number of spaces before the name starts
+				pos1 = 0;
+				pos2 = 0;
+				for (int i = 0; i < name.length(); i++)
 				{
-					j = 0;		// j is the number of spaces before the name starts
-					pos1 = 0;
-					pos2 = 0;
-					for (int i = 0; i < name.length(); i++)
+					if (name[i] == '_')
 					{
-						if (name[i] == '_')
+						j++;
+						if (j == 3)
 						{
-							j++;
-							if (j == 3)
-							{
-								pos1 = i;
-							}
-
+							pos1 = i;
 						}
-						if (name[i] == '(')
+
+					}
+					if (name[i] == '(')
+					{
+						pos2 = i;
+						break;
+					}
+				}
+				name = name.substr(pos1, pos2 - pos1);
+			}
+			case 4:
+			{
+				j = 0;		// j is the number of spaces before the name starts
+				pos1 = 0;
+				pos2 = 0;
+				for (int i = 0; i < name.length(); i++)
+				{
+					if (name[i] == '_')
+					{
+						j++;
+						if (j == 3)
+						{
+							pos1 = i;
+						}
+						if (j == 4)
 						{
 							pos2 = i;
 							break;
 						}
 					}
-					name = name.substr(pos1, pos2 - pos1);
 				}
-				case 4:
-				{
-					j = 0;		// j is the number of spaces before the name starts
-					pos1 = 0;
-					pos2 = 0;
-					for (int i = 0; i < name.length(); i++)
-					{
-						if (name[i] == '_')
-						{
-							j++;
-							if (j == 3)
-							{
-								pos1 = i;
-							}
-							if (j == 4)
-							{
-								pos2 = i;
-								break;
-							}
-						}
-					}
-					name = name.substr(pos1 + 1, pos2 - pos1 - 1);
-				}
-				default:
-					break;
+				name = name.substr(pos1 + 1, pos2 - pos1 - 1);
+			}
+			default:
+				break;
 			}
 			return;
 		}
@@ -263,6 +283,16 @@ namespace cheat::feature
 				}
 			}
 			name = name.substr(pos1 + 1, pos2 - pos1 - 1);
+		}	
+		else if (name.find("Aranara") != std::string::npos)
+		{
+		char AA[] = "Aranara";
+		name = AA;
+		}
+		else if (name.find("Kanban") != std::string::npos)
+		{
+		char AA[] = "Paimon";
+		name = AA;
 		}
 		else
 		{
@@ -404,9 +434,18 @@ namespace cheat::feature
 					auto& entry = field.value();
 					if (!entry.m_Enabled || !m_FilterExecutor.ApplyFilter(entity, filter))
 						continue;
-
+                    if (entry.m_Name == "Buried Chest")
+					{
+                        if(isBuriedChest(entity))
+                        {
+                            esp::render::DrawEntity(entry.m_Name, entity, entry.m_Color, entry.m_ContrastColor);
+                        }
+                        break;
+                    }
 					if (entry.m_Name == "Npc" || "AvatarOwn" || "AvatarTeammate")
 					{
+                        if (isBuriedChest(entity))
+                            continue;
 						if (entity->type() == app::EntityType__Enum_1::Avatar || entity->type() == app::EntityType__Enum_1::NPC)
 						{
 							std::string name = entity->name();
@@ -574,30 +613,37 @@ namespace cheat::feature
 		ADD_FILTER_FIELD(collection, WoodenCrate);
 		ADD_FILTER_FIELD(collection, GeoSigil);
 
+		// Regular Chests
 		ADD_FILTER_FIELD(chest, CommonChest);
 		ADD_FILTER_FIELD(chest, ExquisiteChest);
 		ADD_FILTER_FIELD(chest, PreciousChest);
 		ADD_FILTER_FIELD(chest, LuxuriousChest);
 		ADD_FILTER_FIELD(chest, RemarkableChest);
+		// Other Chests
+		ADD_FILTER_FIELD(chest, BuriedChest);
 		ADD_FILTER_FIELD(chest, SearchPoint);
+		
 
 		ADD_FILTER_FIELD(featured, Anemoculus);
 		ADD_FILTER_FIELD(featured, CrimsonAgate);
-		ADD_FILTER_FIELD(featured, Electroculus);
 		ADD_FILTER_FIELD(featured, Dendroculus);
-		ADD_FILTER_FIELD(featured, EchoingConch);
+		ADD_FILTER_FIELD(featured, Electroculus);
 		ADD_FILTER_FIELD(featured, Electrogranum);
 		ADD_FILTER_FIELD(featured, FishingPoint);
 		ADD_FILTER_FIELD(featured, Geoculus);
-		ADD_FILTER_FIELD(featured, ImagingConch);
 		ADD_FILTER_FIELD(featured, ItemDrops);
 		ADD_FILTER_FIELD(featured, KeySigil);
 		ADD_FILTER_FIELD(featured, Lumenspar);
 		ADD_FILTER_FIELD(featured, ShrineOfDepth);
 		ADD_FILTER_FIELD(featured, TimeTrialChallenge);
 
+		ADD_FILTER_FIELD(guide, BouncyMushroom);
 		ADD_FILTER_FIELD(guide, CampfireTorch);
+		ADD_FILTER_FIELD(guide, ClusterleafOfCultivation);
 		ADD_FILTER_FIELD(guide, DayNightSwitchingMechanism);
+		ADD_FILTER_FIELD(guide, DendroGranum);
+		ADD_FILTER_FIELD(guide, DendroPile);
+		ADD_FILTER_FIELD(guide, DendroRock);
 		ADD_FILTER_FIELD(guide, EnkanomiyaPhaseGate);
 		ADD_FILTER_FIELD(guide, MysteriousCarvings);
 		ADD_FILTER_FIELD(guide, PhaseGate);
@@ -619,6 +665,7 @@ namespace cheat::feature
 		ADD_FILTER_FIELD(living, Crow);
 		ADD_FILTER_FIELD(living, CrystalCore);
 		ADD_FILTER_FIELD(living, Dog);
+		ADD_FILTER_FIELD(living, DuskBird);
 		ADD_FILTER_FIELD(living, Eel);
 		ADD_FILTER_FIELD(living, Falcon);
 		ADD_FILTER_FIELD(living, Finch);
@@ -634,9 +681,9 @@ namespace cheat::feature
 		ADD_FILTER_FIELD(living, Onikabuto);
 		ADD_FILTER_FIELD(living, Pigeon);
 		ADD_FILTER_FIELD(living, Salamander);
+		ADD_FILTER_FIELD(living, Scarab);
 		ADD_FILTER_FIELD(living, Squirrel);
 		ADD_FILTER_FIELD(living, Starconch);
-		ADD_FILTER_FIELD(living, Tukan);
 		ADD_FILTER_FIELD(living, Weasel);
 		ADD_FILTER_FIELD(living, Wigeon);
 
@@ -688,6 +735,7 @@ namespace cheat::feature
 		ADD_FILTER_FIELD(monster, MaguuKenki);
 		// Sumeru
 		ADD_FILTER_FIELD(monster, JadeplumeTerrorshroom);
+		ADD_FILTER_FIELD(monster, AeonblightDrake);
 		// Regular. Alphabetical.
 		ADD_FILTER_FIELD(monster, AbyssMage);
 		ADD_FILTER_FIELD(monster, BlackSerpentKnight);
@@ -706,7 +754,6 @@ namespace cheat::feature
 		ADD_FILTER_FIELD(monster, Hilichurl);
 		ADD_FILTER_FIELD(monster, HydroAbyssHerald);
 		ADD_FILTER_FIELD(monster, HydroBathysmalVishap);
-		ADD_FILTER_FIELD(monster, HydroHypostasisSummon);
 		ADD_FILTER_FIELD(monster, Kairagi);
 		ADD_FILTER_FIELD(monster, Millelith);
 		ADD_FILTER_FIELD(monster, Mitachurl);
@@ -719,6 +766,7 @@ namespace cheat::feature
 		ADD_FILTER_FIELD(monster, OceanidFrog);
 		ADD_FILTER_FIELD(monster, OceanidSquirrel);
 		ADD_FILTER_FIELD(monster, OceanidWigeon);
+		ADD_FILTER_FIELD(monster, PrimalConstruct);
 		ADD_FILTER_FIELD(monster, PyroAbyssLector);
 		ADD_FILTER_FIELD(monster, Rifthound);
 		ADD_FILTER_FIELD(monster, RifthoundWhelp);
@@ -730,6 +778,8 @@ namespace cheat::feature
 		ADD_FILTER_FIELD(monster, RuinSentinel);
 		ADD_FILTER_FIELD(monster, Samachurl);
 		ADD_FILTER_FIELD(monster, SangonomiyaCohort);
+		ADD_FILTER_FIELD(monster, Scorpion);
+		ADD_FILTER_FIELD(monster, SemiPerpetualControlMatrix);
 		ADD_FILTER_FIELD(monster, ShadowyHusk);
 		ADD_FILTER_FIELD(monster, ShaggySumpterBeast);
 		ADD_FILTER_FIELD(monster, ShogunateInfantry);
@@ -739,10 +789,12 @@ namespace cheat::feature
 		ADD_FILTER_FIELD(monster, StretchyFungus);
 		ADD_FILTER_FIELD(monster, TreasureHoarder);
 		ADD_FILTER_FIELD(monster, UnusualHilichurl);
+		ADD_FILTER_FIELD(monster, Vulture);
 		ADD_FILTER_FIELD(monster, WhirlingFungus);
 		ADD_FILTER_FIELD(monster, Whopperflower);
 		ADD_FILTER_FIELD(monster, WingedShroom);
 
+		ADD_FILTER_FIELD(plant, Ajilenakh);
 		ADD_FILTER_FIELD(plant, AmakumoFruit);
 		ADD_FILTER_FIELD(plant, Apple);
 		ADD_FILTER_FIELD(plant, BambooShoot);
@@ -772,7 +824,8 @@ namespace cheat::feature
 		ADD_FILTER_FIELD(plant, Pinecone);
 		ADD_FILTER_FIELD(plant, Qingxin);
 		ADD_FILTER_FIELD(plant, Radish);
-		ADD_FILTER_FIELD(plant, RukkhashavaMushrooms);
+		ADD_FILTER_FIELD(plant, Redcrest);
+		ADD_FILTER_FIELD(plant, RukkhashavaMushroom);
 		ADD_FILTER_FIELD(plant, SakuraBloom);
 		ADD_FILTER_FIELD(plant, SangoPearl);
 		ADD_FILTER_FIELD(plant, SeaGanoderma);
@@ -785,7 +838,7 @@ namespace cheat::feature
 		ADD_FILTER_FIELD(plant, SweetFlower);
 		ADD_FILTER_FIELD(plant, Valberry);
 		ADD_FILTER_FIELD(plant, Violetgrass);
-		//ADD_FILTER_FIELD(plant, Viparyas);
+		ADD_FILTER_FIELD(plant, Viparyas);
 		ADD_FILTER_FIELD(plant, WindwheelAster);
 		ADD_FILTER_FIELD(plant, Wolfhook);
 		ADD_FILTER_FIELD(plant, ZaytunPeach);
@@ -794,39 +847,41 @@ namespace cheat::feature
 		ADD_FILTER_FIELD(puzzle, BakeDanuki);
 		ADD_FILTER_FIELD(puzzle, BloattyFloatty);
 		ADD_FILTER_FIELD(puzzle, CubeDevices);
+		ADD_FILTER_FIELD(puzzle, SumeruPuzzles);
+		ADD_FILTER_FIELD(puzzle, TheWithering);
 		ADD_FILTER_FIELD(puzzle, EightStoneTablets);
 		ADD_FILTER_FIELD(puzzle, ElectricConduction);
-		ADD_FILTER_FIELD(puzzle, RelayStone);
 		ADD_FILTER_FIELD(puzzle, ElectroSeelie);
 		ADD_FILTER_FIELD(puzzle, ElementalMonument);
 		ADD_FILTER_FIELD(puzzle, FloatingAnemoSlime);
 		ADD_FILTER_FIELD(puzzle, Geogranum);
 		ADD_FILTER_FIELD(puzzle, GeoPuzzle);
 		ADD_FILTER_FIELD(puzzle, LargeRockPile);
-		ADD_FILTER_FIELD(puzzle, LightUpTilePuzzle);
 		ADD_FILTER_FIELD(puzzle, LightningStrikeProbe);
+		ADD_FILTER_FIELD(puzzle, LightUpTilePuzzle);
 		ADD_FILTER_FIELD(puzzle, LumenCage);
 		ADD_FILTER_FIELD(puzzle, LuminousSeelie);
 		ADD_FILTER_FIELD(puzzle, MistBubble);
+		ADD_FILTER_FIELD(puzzle, NurseriesInTheWilds);
 		ADD_FILTER_FIELD(puzzle, OozingConcretions);
+		ADD_FILTER_FIELD(puzzle, PhantasmalGate);
 		ADD_FILTER_FIELD(puzzle, PirateHelm);
 		ADD_FILTER_FIELD(puzzle, PressurePlate);
+		ADD_FILTER_FIELD(puzzle, RelayStone);
+		ADD_FILTER_FIELD(puzzle, SaghiraMachine);
 		ADD_FILTER_FIELD(puzzle, SealLocations);
 		ADD_FILTER_FIELD(puzzle, Seelie);
 		ADD_FILTER_FIELD(puzzle, SeelieLamp);
 		ADD_FILTER_FIELD(puzzle, SmallRockPile);
+		ADD_FILTER_FIELD(puzzle, StonePillarSeal);
 		ADD_FILTER_FIELD(puzzle, StormBarrier);
 		ADD_FILTER_FIELD(puzzle, SwordHilt);
 		ADD_FILTER_FIELD(puzzle, Temari);
 		ADD_FILTER_FIELD(puzzle, TorchPuzzle);
+		ADD_FILTER_FIELD(puzzle, TriYanaSeeds);
 		ADD_FILTER_FIELD(puzzle, UniqueRocks);
 		ADD_FILTER_FIELD(puzzle, WarmingSeelie);
 		ADD_FILTER_FIELD(puzzle, WindmillMechanism);
-		ADD_FILTER_FIELD(puzzle, MelodicBloom);
-		ADD_FILTER_FIELD(puzzle, CloudleisureSteps);
-		ADD_FILTER_FIELD(puzzle, DreamForm);
-		ADD_FILTER_FIELD(puzzle, StarlightCoalescence);
-		ADD_FILTER_FIELD(puzzle, TheRavenForum);
 	}
 #undef ADD_FILTER_FIELD
 }

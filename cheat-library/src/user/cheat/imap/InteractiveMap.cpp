@@ -9,6 +9,8 @@
 #include <cheat/events.h>
 #include <cheat/game/CacheFilterExecutor.h>
 #include <cheat/GenshinCM.h>
+#include <set>
+
 
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include "imgui_internal.h"
@@ -22,6 +24,7 @@ namespace cheat::feature
 	InteractiveMap::InteractiveMap() : Feature(),
 		NFEX(f_Enabled, "Interactive map", "m_InteractiveMap", "InteractiveMap", false, false),
 		NF(f_SeparatedWindows, "Separated windows", "InteractiveMap", true),
+		NF(f_ShowMaterialsWindow, "Materials filter window", "InteractiveMap", false),
 		NF(f_CompletionLogShow, "Completion log show", "InteractiveMap", false),
 
 		NFS(f_STFixedPoints, "Fixed points", "InteractiveMap", SaveAttachType::Global),
@@ -59,6 +62,7 @@ namespace cheat::feature
 	{
 		// Initializing
 		LoadScenesData();
+		LoadMaterialFilterData();
 		ApplyScaling();
 
 		// --Loading user data
@@ -184,12 +188,171 @@ namespace cheat::feature
 		ImGui::EndGroupPanel();
 	}
 
+	void InteractiveMap::DrawMaterialFilters()
+	{
+		ImGui::BeginTabBar("#TypesTabs", ImGuiTabBarFlags_None);
+		for (auto& [type, data] : m_MaterialData)
+		{
+			if (ImGui::BeginTabItem(util::MakeCapital(type).c_str()))
+			{
+				for (auto& category : data.categories)
+					DrawMaterialFilterCategories(category, type);
+
+				ImGui::EndTabItem();
+			}
+		}
+
+		ImGui::EndTabBar();
+	}
+
+	void InteractiveMap::DrawMaterialFilterCategories(MaterialCategoryData& category, std::string type)
+	{
+		bool checked = std::all_of(category.children.begin(), category.children.end(), [](MaterialData* matData) {  return matData->selected; });
+		bool changed = false;
+		if (ImGui::BeginSelectableGroupPanel(category.name.c_str(), checked, changed, true))
+		{
+			int columns = 3;
+			if (ImGui::BeginTable(category.name.c_str(), columns))
+			{
+				uint32_t i = 0;
+				for (auto& child : category.children)
+				{
+					if (i % columns == 0)
+					{
+						ImGui::TableNextRow();
+						ImGui::TableSetColumnIndex(0);
+					}
+					else ImGui::TableNextColumn();
+
+					ImGui::PushID(child);
+					DrawMaterialFilter(child, type);
+					ImGui::PopID();
+					i++;
+				}
+				ImGui::EndTable();
+			}
+		}
+		ImGui::EndSelectableGroupPanel();
+
+		if (changed)
+		{
+			for (const auto& material : category.children)
+			{
+				material->selected.value() = checked;
+				material->selected.FireChanged();
+			}
+		}
+	}
+
+	void InteractiveMap::DrawMaterialFilter(MaterialData* material, std::string type)
+	{
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if (window->SkipItems)
+			return;
+
+		const ImGuiStyle& style = ImGui::GetStyle();
+
+		// Image Box
+		const auto image_sz = 50.f;
+		ImVec2 box_sz = ImVec2(50, 50);
+		ImVec2 pos_min = ImGui::GetCursorScreenPos();
+		ImVec2 pos_max = pos_min + box_sz;
+
+		// Text
+		const ImVec2 textSize = ImGui::CalcTextSize(material->name.c_str(), nullptr, true);
+		ImVec2 textPos = ImVec2(pos_max.x + style.FramePadding.x, pos_min.y + (box_sz.y / 2) - (textSize.y / 2));
+
+		// Widget
+		ImGui::InvisibleButton(("##" + material->clearName).c_str(), box_sz, ImGuiButtonFlags_MouseButtonLeft);
+		bool itemHovered = ImGui::IsItemHovered();
+		bool itemClicked = ImGui::IsItemActive() && ImGui::IsItemClicked(0);
+
+		if(material->selected)
+			window->DrawList->AddRectFilled(pos_min, pos_max, ImGui::GetColorU32(ImGuiCol_CheckMark), 10.f);
+
+		auto image = ImageLoader::GetImage("HD" + material->clearName);
+		if (image)
+			window->DrawList->AddImageRounded(image->textureID, pos_min, pos_max, ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), IM_COL32_WHITE, 10.f);
+		else
+			window->DrawList->AddRectFilled(pos_min, pos_max, ImGui::GetColorU32(ImGuiCol_FrameBg), 10.f);
+
+		window->DrawList->AddText(textPos, ImGui::GetColorU32(ImGuiCol_Text), material->name.c_str());
+
+		if (itemClicked)
+			material->selected = !material->selected;
+
+		if(material->selected || itemHovered)
+			window->DrawList->AddRect(pos_min, pos_max, ImGui::GetColorU32(ImGuiCol_CheckMark), 10.f);
+
+		// Center checkmark
+		//auto check_sz = box_sz.x / 4;
+		//if (material->selected)
+		//{
+		//	window->DrawList->AddCircleFilled(pos_min + (box_sz / 2), check_sz * 0.75, ImGui::GetColorU32(ImGuiCol_CheckMark), 20);
+		//	ImGui::RenderCheckMark(window->DrawList, pos_min + ((box_sz - ImVec2(check_sz, check_sz)) / 2), ImGui::GetColorU32(ImGuiCol_FrameBgActive), check_sz);
+		//}
+	}
+
+	void InteractiveMap::DrawMaterials(uint32_t sceneID)
+	{
+		auto& labels = m_ScenesData[sceneID].labels;
+		std::map<std::string, std::set<LabelData*>> materialLabels = { {"character", {}}, {"weapon", {}} };
+		for (auto& [type, list] : materialLabels)
+		{
+			for (auto& [charID, character] : m_MaterialData[type].materials)
+				if (character.selected)
+					for (auto materialID : character.filter)
+						if(labels.count(materialID) > 0) // Depends on sceneID
+							list.insert(&labels[materialID]);
+		}
+
+		for (auto& [type, materials] : materialLabels)
+		{
+			if (materials.empty())
+				continue;
+
+			bool checked = std::all_of(materials.begin(), materials.end(), [](const LabelData* label) { return label->enabled; });
+			bool changed = false;
+
+			if (ImGui::BeginSelectableGroupPanel((util::MakeCapital(type) + " Filters").c_str(), checked, changed, true))
+			{
+				if (ImGui::BeginTable(("##" + util::MakeCapital(type) + "Table").c_str(), 3))
+				{
+					for (const auto& label : materials)
+					{
+						ImGui::TableNextColumn();
+						ImGui::PushID(label);
+						DrawFilter(*label);
+						ImGui::PopID();
+					}
+					ImGui::EndTable();
+				}
+			}
+			ImGui::EndSelectableGroupPanel();
+
+			if (changed)
+			{
+				for (const auto& label : materials)
+				{
+					label->enabled = checked;
+				}
+			}
+		}
+	}
+
 	void InteractiveMap::DrawFilters(const bool searchFixed)
 	{
 		const auto sceneID = game::GetCurrentMapSceneID();
 		if (m_ScenesData.count(sceneID) == 0)
 			ImGui::Text("Sorry. Current scene is not supported.");
-		
+
+		ImGui::BeginGroupPanel("Ascension Materials Filter");
+		{
+			ConfigWidget("Show Ascension Materials", f_ShowMaterialsWindow, "Open ascension materials filter window");
+			DrawMaterials(sceneID);
+		}
+		ImGui::EndGroupPanel();
+
 		ImGui::InputText("Search", &m_SearchText); ImGui::SameLine();
 		HelpMarker(
 			"This page following with filters for items.\n"
@@ -199,6 +362,7 @@ namespace cheat::feature
 			"\tthey indicate that filter support some features. (Hover it)\n"
 			"Thats all for now. Happy using ^)"
 		);
+
 		if (searchFixed)
 			ImGui::BeginChild("FiltersList", ImVec2(-1, 0), false, ImGuiWindowFlags_NoBackground);
 
@@ -563,13 +727,13 @@ namespace cheat::feature
 		std::lock_guard _userDataLock(m_UserDataMutex);
 		LOG_WARNING("Complete point at %.0f.", game::EntityManager::instance().avatar()->distance(pointData->levelPosition));
 
-		if (m_CompletedPoints.count(pointData) > 0)
+		if (std::find_if(m_CompletedPoints.begin(), m_CompletedPoints.end(), [=](PointData* data) { return pointData->id == data->id; }) != std::end(m_CompletedPoints))
 			return;
 
 		pointData->completed = true;
 		pointData->completeTimestamp = util::GetCurrentTimeMillisec();
 		m_ScenesData[pointData->sceneID].labels[pointData->labelID].completedCount++;
-		m_CompletedPoints.insert(pointData);
+		m_CompletedPoints.push_back(pointData);
 		
 		SaveCompletedPoints();
 	}
@@ -578,13 +742,14 @@ namespace cheat::feature
 	{
 		std::lock_guard _userDataLock(m_UserDataMutex);
 
-		if (m_CompletedPoints.count(pointData) == 0)
+        auto pointDataIterator = std::find_if(m_CompletedPoints.begin(), m_CompletedPoints.end(), [=](PointData* data) { return pointData->id == data->id; });
+        if (pointDataIterator == m_CompletedPoints.end())
 			return;
 
 		pointData->completed = false;
 		pointData->completeTimestamp = 0;
 		m_ScenesData[pointData->sceneID].labels[pointData->labelID].completedCount--;
-		m_CompletedPoints.erase(pointData);
+		m_CompletedPoints.erase(pointDataIterator);
 
 		SaveCompletedPoints();
 	}
@@ -595,11 +760,12 @@ namespace cheat::feature
 		if (m_CompletedPoints.empty())
 			return;
 
-		PointData* pointData = *m_CompletedPoints.begin();
+        auto pointDataIterator = --m_CompletedPoints.end();
+        PointData* pointData = *pointDataIterator;
 		pointData->completed = false;
 		pointData->completeTimestamp = 0;
 		m_ScenesData[pointData->sceneID].labels[pointData->labelID].completedCount--;
-		m_CompletedPoints.erase(pointData);
+		m_CompletedPoints.erase(pointDataIterator);
 
 		SaveCompletedPoints();
 	}
@@ -916,7 +1082,7 @@ namespace cheat::feature
 		}
 
 		auto& point = points[pointID];
-		if (m_CompletedPoints.count(&point) > 0)
+		if (std::find_if(m_CompletedPoints.begin(), m_CompletedPoints.end(), [=](PointData* data) { return point.id == data->id; }) != std::end(m_CompletedPoints))
 		{
 			LOG_WARNING("Completed point %u duplicate.", pointID);
 			return;
@@ -926,7 +1092,7 @@ namespace cheat::feature
 		point.completeTimestamp = data["complete_timestamp"];
 		labelData->completedCount++;
 
-		m_CompletedPoints.insert(&point);
+		m_CompletedPoints.push_back(&point);
 	}
 
 	void InteractiveMap::LoadFixedPointData(LabelData* labelData, const nlohmann::json& data)
@@ -1026,6 +1192,7 @@ namespace cheat::feature
 	void InteractiveMap::LoadCompletedPoints()
 	{
 		LoadUserData(f_CompletedPointsJson, &InteractiveMap::LoadCompletedPointData);
+		ReorderCompletedPointDataByTimestamp();
 	}
 
 	void InteractiveMap::SaveCompletedPoints()
@@ -1039,6 +1206,11 @@ namespace cheat::feature
 		ResetUserData(&InteractiveMap::ResetCompletedPointData);
 		m_CompletedPoints.clear();
 	}
+
+    void InteractiveMap::ReorderCompletedPointDataByTimestamp()
+    {
+        m_CompletedPoints.sort([](PointData* a, PointData* b) { return a->completeTimestamp < b->completeTimestamp; });
+    }
 
 	void InteractiveMap::LoadCustomPoints()
 	{
@@ -1216,6 +1388,51 @@ namespace cheat::feature
 
         LOG_INFO("Interactive map data loaded successfully.");
     }
+
+	void InteractiveMap::LoadMaterialFilterData(const nlohmann::json& data, std::string type)
+	{
+		auto& materials = m_MaterialData[type].materials;
+		for (auto& [filterID, filterData] : data[type].items())
+		{
+			auto& materialEntry = materials[std::stoi(filterID)];
+
+			materialEntry.id = std::stoi(filterID);
+			materialEntry.name = filterData["name"];
+			materialEntry.clearName = filterData["clear_name"];
+			materialEntry.filter = filterData["materials"].get<std::vector<uint32_t>>();
+			materialEntry.selected = config::CreateField<bool>(materialEntry.name, materialEntry.clearName,
+				"InteractiveMap::Materials::" + util::MakeCapital(type) + "{}", false, false);
+		}
+
+		auto& categories = m_MaterialData[type].categories;
+		for (auto& category : data[type + "_types"])
+		{
+			categories.push_back({});
+			auto& newCategory = categories.back();
+
+			newCategory.id = std::stoi(category["id"].get<std::string>());
+			newCategory.name = category["name"];
+			auto& children = newCategory.children;
+			for (auto& child : category["children"])
+			{
+				if (materials.count(child) > 0)
+					children.push_back(&materials[child]);
+			}
+
+			if (children.size() == 0)
+			{
+				categories.pop_back();
+				return;
+			}
+		}
+	}
+
+	void InteractiveMap::LoadMaterialFilterData()
+	{
+		auto data = nlohmann::json::parse(ResourceLoader::Load("AscensionMaterialsData", RT_RCDATA));
+		LoadMaterialFilterData(data, "character");
+		LoadMaterialFilterData(data, "weapon");
+	}
 
     struct ScalingData
     {
@@ -1452,6 +1669,17 @@ namespace cheat::feature
 
 				ImGui::End();
 			}
+
+			if (f_ShowMaterialsWindow)
+			{
+				bool materialsOpened = ImGui::Begin("Ascension Materials Filter", nullptr, ImGuiWindowFlags_NoFocusOnAppearing);
+				AddWindowRect();
+
+				if (materialsOpened)
+					DrawMaterialFilters();
+
+				ImGui::End();
+			}
 		}
 
 		if (!f_Enabled)
@@ -1468,6 +1696,9 @@ namespace cheat::feature
 	
 	static void RenderPointCircle(const ImVec2& position, ImTextureID textureID, float transparency, float radius, bool isCustom = false)
 	{
+		auto& settings = feature::Settings::GetInstance();
+		radius *= settings.f_FontSize / 16.0f;
+
 		ImVec2 imageStartPos = position - radius;
 		ImVec2 imageEndPos = position + radius;
 
@@ -1779,11 +2010,12 @@ namespace cheat::feature
 		INIT_FILTER(chest, RemarkableChest);
 		INIT_FILTER(featured, Anemoculus);
 		INIT_FILTER(featured, CrimsonAgate);
+		INIT_FILTER(featured, Dendroculus);
 		INIT_FILTER(featured, Electroculus);
 		//INIT_FILTER(featured, Electrogranum);
 		INIT_FILTER(featured, Geoculus);
+		INIT_FILTER(featured, KeySigil);
 		INIT_FILTER(featured, Lumenspar);
-		//INIT_FILTER(featured, KeySigil);
 		//INIT_FILTER(featured, ShrineOfDepth);
 		//INIT_FILTER(featured, TimeTrialChallenge);
 		//INIT_FILTER(guide, CampfireTorch);
@@ -1846,8 +2078,10 @@ namespace cheat::feature
 		INIT_FILTER(plant, FlamingFlowerStamen);
 		INIT_FILTER(plant, FluorescentFungus);
 		INIT_FILTER(plant, GlazeLily);
+		INIT_FILTER(plant, HarraFruit);
 		INIT_FILTER(plant, Horsetail);
 		INIT_FILTER(plant, JueyunChili);
+		INIT_FILTER(plant, KalpalataLotus);
 		INIT_FILTER(plant, LavenderMelon);
 		INIT_FILTER(plant, LotusHead);
 		INIT_FILTER(plant, Matsutake);
@@ -1855,10 +2089,13 @@ namespace cheat::feature
 		INIT_FILTER(plant, MistFlowerCorolla);
 		INIT_FILTER(plant, Mushroom);
 		INIT_FILTER(plant, NakuWeed);
+		INIT_FILTER(plant, NilotpalaLotus);
+		INIT_FILTER(plant, Padisarah);
 		INIT_FILTER(plant, PhilanemoMushroom);
 		INIT_FILTER(plant, Pinecone);
 		INIT_FILTER(plant, Qingxin);
 		INIT_FILTER(plant, Radish);
+		INIT_FILTER(plant, RukkhashavaMushroom);
 		INIT_FILTER(plant, SakuraBloom);
 		INIT_FILTER(plant, SangoPearl);
 		INIT_FILTER(plant, SeaGanoderma);
@@ -1866,12 +2103,15 @@ namespace cheat::feature
 		INIT_FILTER(plant, SilkFlower);
 		INIT_FILTER(plant, SmallLampGrass);
 		INIT_FILTER(plant, Snapdragon);
+		INIT_FILTER(plant, SumeruRose);
 		INIT_FILTER(plant, Sunsettia);
 		INIT_FILTER(plant, SweetFlower);
 		INIT_FILTER(plant, Valberry);
 		INIT_FILTER(plant, Violetgrass);
+		INIT_FILTER(plant, Viparyas);
 		INIT_FILTER(plant, WindwheelAster);
 		INIT_FILTER(plant, Wolfhook);
+		INIT_FILTER(plant, ZaytunPeach);
 		//INIT_FILTER(puzzle, AncientRime);
 		//INIT_FILTER(puzzle, BakeDanuki);
 		//INIT_FILTER(puzzle, BloattyFloatty);
@@ -1917,8 +2157,10 @@ namespace cheat::feature
 
 		INIT_DETECT_ITEM(Anemoculus);
 		INIT_DETECT_ITEM(CrimsonAgate);
+		INIT_DETECT_ITEM(Dendroculus);
 		INIT_DETECT_ITEM(Electroculus);
 		INIT_DETECT_ITEM(Geoculus);
+		INIT_DETECT_ITEM(KeySigil);
 		INIT_DETECT_ITEM(Lumenspar);
 
 #undef INIT_DETECT_ITEM
